@@ -1,26 +1,55 @@
-import requests
+# load system packages
 import os
+
+# load custom packages (requirements)
 from dotenv import load_dotenv
+import pandas as pd
+import matplotlib.pyplot as plt
 
+# load local packages
+from downloader import get_era5_monthly, get_EIA_plant_information, get_EIA_plant_generation
+
+
+
+# load environment variables
 load_dotenv()
-
 EIA_API_KEY = os.environ["EIA_API_KEY"]
 
-base_url = "https://api.eia.gov/v2/electricity/facility-fuel/data/?"
+# get EIA plant information for wind assets
+df_plant = get_EIA_plant_information(EIA_API_KEY)
+print(df_plant)
 
-params = {"frequency":"monthly",
-          "data[0]":"generation",
-          "facets[fuel2002][]":"WND",
-          "facets[plantCode][]":"56810",
-          "facets[primeMover][]":"ALL",
-          "start":"2023-01",
-          "sort[0][column]":"period",
-          "sort[0][direction]":"desc",
-          "offset":"0",
-          "length":"5000",
-          "api_key":EIA_API_KEY}
-          
-r = requests.get(base_url, params=params)
+# select an EIA plant for analysis
+selected_plant = df_plant.iloc[0]
+print(selected_plant)
 
-print(r.status_code)
-print(r.text)
+# get the EIA generation for the selected plant
+df_generation = get_EIA_plant_generation(EIA_API_KEY,plantCode=selected_plant["plantid"])
+
+# set index to converted datetime
+df_generation = df_generation.set_index("period")
+df_generation.index = pd.to_datetime(df_generation.index)
+print(df_generation)
+
+# get era5 data for the selected plant
+df_era5 = get_era5_monthly(
+    lat=selected_plant["latitude"],
+    lon=selected_plant["longitude"],
+    save_pathname="data/",
+    save_filename=selected_plant["plantid"],
+    start_date="2000-01",
+)
+
+print(df_era5)
+
+df = pd.concat([df_era5[["windspeed_ms"]],df_generation[["generation","gross-generation"]]],axis=1)
+
+print(df)
+
+fig, ax = plt.subplots(figsize=(20,10)) 
+
+df.plot(y = 'generation', ax = ax) 
+df.plot(y = 'gross-generation', ax = ax) 
+df.plot(y = 'windspeed_ms', ax = ax, secondary_y = True) 
+
+plt.show()

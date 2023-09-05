@@ -1,2 +1,7 @@
 requests
 dotenv
+cdsapi
+xarray
+scipy
+dask
+matplotlib
