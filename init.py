@@ -53,3 +53,23 @@ df.plot(y = 'gross-generation', ax = ax)
 df.plot(y = 'windspeed_ms', ax = ax, secondary_y = True) 
 
 plt.show()
+
+
+# Next steps:
+# 1) normalise generation (days in month, gross generation, degradation)
+# 2) plot correlation
+# 3) remove outliers
+# 4) linear fit and synthesise generation
+# 5) LT corrections
+# 6) P50 output with availability shown
+
+# Improvements:
+# ERA5 download for whole of US to speed up results
+# EIA download for whole of US to speed up results
+# MERRA2 included as well
+# Cover wind and solar
+# Degradation analysis
+# Simple front-end
+# Examples
+# Documentation
+# Extend to other open generation datasets 
