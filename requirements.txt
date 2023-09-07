@@ -5,3 +5,4 @@ xarray
 scipy
 dask
 matplotlib
+scikit-learn
