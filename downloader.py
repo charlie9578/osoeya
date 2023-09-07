@@ -175,11 +175,9 @@ def download_zenodo_data(record_id: int, outfile_path: str | Path) -> None:
                     zipfile.extractall(outfile_path)
 
 
-def get_era5_monthly(
-    lat: float,
-    lon: float,
-    save_pathname: str | Path,
-    save_filename: str,
+def download_era5_monthly(
+    save_pathname: str | Path = "data",
+    save_filename: str = "era5_monthly",
     start_date: str = "2000-01",
     end_date: str = None,
 ) -> pd.DataFrame:
@@ -190,15 +188,13 @@ def get_era5_monthly(
     This function returns monthly ERA5 data from the "ERA5 monthly averaged data on single levels
     from 1959 to present" dataset. See further details regarding the dataset at:
     https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels-monthly-means.
-    Only 10m wind speed, the temperature at 2m, and the surface pressure are downloaded here.
+    Only the 10m wind speed is downloaded here.
 
     As well as returning the data as a dataframe, the data is also saved as monthly NetCDF files and
     a csv file with the concatenated data. These are located in the "save_pathname" directory, with
     "save_filename" prefix. This allows future loading without download from the CDS service.
 
     Args:
-        lat(:obj:`float`): Latitude in WGS 84 spatial reference system (decimal degrees).
-        lon(:obj:`float`): Longitude in WGS 84 spatial reference system (decimal degrees).
         save_pathname(:obj:`str` | :obj:`Path`): The path where the downloaded reanalysis data will
             be saved.
         save_filename(:obj:`str`): The file name used to save the downloaded reanalysis data.
@@ -213,8 +209,6 @@ def get_era5_monthly(
         df(:obj:`dataframe`): A dataframe containing time series of the requested reanalysis
             variables:
             1. windspeed_ms: the wind speed in m/s at 10m height.
-            2. temperature_K: air temperature in Kelvin at 2m height.
-            3. surf_pres_Pa: surface pressure in Pascals.
 
     Raises:
         ValueError: If the start_date is greater than the end_date.
@@ -258,9 +252,6 @@ def get_era5_monthly(
     # list all dates that will be downloaded
     dates = pd.date_range(start=start_date, end=end_date, freq="MS", inclusive="both")
 
-    # get the data for the closest 9 nodes to the coordinates
-    node_spacing = 0.250500001 * 1
-
     # See: https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels-monthly-means?tab=form
     # for formulating other requests from cds
     cds_dataset = "reanalysis-era5-single-levels-monthly-means"
@@ -269,18 +260,10 @@ def get_era5_monthly(
         "format": "netcdf",
         "variable": [
             "10m_wind_speed",
-            "2m_temperature",
-            "surface_pressure",
         ],
         "year": None,
         "month": None,
         "time": ["00:00"],
-        "area": [
-            lat + node_spacing,
-            lon - node_spacing,
-            lat - node_spacing,
-            lon + node_spacing,
-        ],
     }
 
     # download the data
@@ -298,12 +281,52 @@ def get_era5_monthly(
                 logger.error(f"Failed to download ERA5: {outfile}")
                 logger.error(e)
 
+def get_era5_monthly(
+    lat: float,
+    lon: float,
+    save_filename: str,
+    save_pathname: str | Path = "data/assets",
+    data_pathname: str | Path = "data",
+    data_filename: str = "era5_monthly",
+    start_date: str = "2000-01",
+    end_date: str = None,
+) -> pd.DataFrame:
+    """ 
+        Args:
+        lat(:obj:`float`): Latitude in WGS 84 spatial reference system (decimal degrees).
+        lon(:obj:`float`): Longitude in WGS 84 spatial reference system (decimal degrees).
+        save_pathname(:obj:`str` | :obj:`Path`): The path where the downloaded reanalysis data will
+            be saved.
+        save_filename(:obj:`str`): The file name used to save the downloaded reanalysis data.
+        start_date(:obj:`str`): The starting year and month that data is downloaded for. This
+            should be provided as a string in the format "YYYY-MM". Defaults to "2000-01".
+        end_date(:obj:`str`): The final year and month that data is downloaded for. This should be
+            provided as a string in the format "YYYY-MM". Defaults to current year and most recent
+            month with full data, accounting for the fact that the ERA5 monthly dataset is released
+            around the the 6th of the month.
+
+    Returns:
+        df(:obj:`dataframe`): A dataframe containing time series of the requested reanalysis
+            variables:
+            1. windspeed_ms: the wind speed in m/s at 10m height.
+
+    Raises:
+        ValueError: If the start_date is greater than the end_date.
+        Exception: If unable to connect to the cdsapi client.
+    """
+    
+    # download the monthly era5 data
+    download_era5_monthly(save_pathname=data_pathname,
+        save_filename=data_filename,
+        start_date=start_date,
+        end_date=end_date)
+
     # get the saved data
-    ds_nc = xr.open_mfdataset(f"{save_pathname / f'{save_filename}*.nc'}")
+    ds_nc = xr.open_mfdataset(f"{data_pathname}/{data_filename}*.nc")
 
     # rename variables to conform with OpenOA
     ds_nc = ds_nc.rename_vars(
-        {"si10": "windspeed_ms", "t2m": "temperature_K", "sp": "surf_pres_Pa"}
+        {"si10": "windspeed_ms"}
     )
 
     # select the central node only for now
@@ -316,7 +339,7 @@ def get_era5_monthly(
     df = sel.to_dataframe()
 
     # select required columns
-    df = df[["windspeed_ms", "temperature_K", "surf_pres_Pa"]]
+    df = df[["windspeed_ms"]]
 
     # rename the index to match other datasets
     df.index.name = "datetime"
@@ -328,6 +351,11 @@ def get_era5_monthly(
     df = df.loc[start_date:end_date]
 
     # save to csv for easy loading as required
+    # create save_pathname if it does not exist
+    save_pathname = Path(save_pathname).resolve()
+    if not save_pathname.exists():
+        save_pathname.mkdir()
+
     df.to_csv(save_pathname / f"{save_filename}.csv", index=True)
 
     return df

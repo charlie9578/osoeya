@@ -9,8 +9,6 @@ import matplotlib.pyplot as plt
 # load local packages
 from downloader import get_era5_monthly, get_EIA_plant_information, get_EIA_plant_generation
 
-
-
 # load environment variables
 load_dotenv()
 EIA_API_KEY = os.environ["EIA_API_KEY"]
@@ -20,7 +18,7 @@ df_plant = get_EIA_plant_information(EIA_API_KEY)
 print(df_plant)
 
 # select an EIA plant for analysis
-selected_plant = df_plant.iloc[0]
+selected_plant = df_plant.iloc[50]
 print(selected_plant)
 
 # get the EIA generation for the selected plant
@@ -34,7 +32,7 @@ print(df_generation)
 # get era5 data for the selected plant
 df_era5 = get_era5_monthly(
     lat=selected_plant["latitude"],
-    lon=selected_plant["longitude"],
+    lon=selected_plant["longitude"]%360,
     save_pathname="data/",
     save_filename=selected_plant["plantid"],
     start_date="2000-01",
@@ -44,16 +42,17 @@ print(df_era5)
 
 df = pd.concat([df_era5[["windspeed_ms"]],df_generation[["generation","gross-generation"]]],axis=1)
 
-print(df)
+print(df.tail(20))
 
 fig, ax = plt.subplots(figsize=(20,10)) 
-
 df.plot(y = 'generation', ax = ax) 
 df.plot(y = 'gross-generation', ax = ax) 
 df.plot(y = 'windspeed_ms', ax = ax, secondary_y = True) 
-
 plt.show()
 
+fig, ax = plt.subplots(figsize=(20,10)) 
+df.plot.scatter(x="windspeed_ms",y='gross-generation',ax=ax)
+plt.show()
 
 # Next steps:
 # 1) normalise generation (days in month, gross generation, degradation)
@@ -64,8 +63,8 @@ plt.show()
 # 6) P50 output with availability shown
 
 # Improvements:
-# ERA5 download for whole of US to speed up results
-# EIA download for whole of US to speed up results
+# Done - ERA5 download for whole of world to speed up results
+# EIA download for all plants to speed up results
 # MERRA2 included as well
 # Cover wind and solar
 # Degradation analysis
