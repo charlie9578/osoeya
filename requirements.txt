@@ -6,3 +6,4 @@ scipy
 dask
 matplotlib
 scikit-learn
+openpyxl
