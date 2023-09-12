@@ -43,6 +43,7 @@ import pandas as pd
 import xarray as xr
 import requests
 from tqdm import tqdm
+import numpy as np
 
 import logging
 
@@ -360,12 +361,9 @@ def get_era5_monthly(
 
     return df
 
-
-def get_merra2_monthly(
-    lat: float,
-    lon: float,
-    save_pathname: str | Path,
-    save_filename: str,
+def download_merra2_monthly(
+    save_pathname: str | Path = "data",
+    save_filename: str = "era5_monthly",
     start_date: str = "2000-01",
     end_date: str = None,
 ) -> pd.DataFrame:
@@ -382,8 +380,6 @@ def get_merra2_monthly(
     with "save_filename" prefix. This allows future loading without download from the CDS service.
 
     Args:
-        lat(:obj:`float`): Latitude in WGS 84 spatial reference system (decimal degrees).
-        lon(:obj:`float`): Longitude in WGS 84 spatial reference system (decimal degrees).
         save_pathname(:obj:`str` | :obj:`Path`): The path where the downloaded reanalysis data will
             be saved.
         save_filename(:obj:`str`): The file name used to save the downloaded reanalysis data.
@@ -397,15 +393,10 @@ def get_merra2_monthly(
         df(:obj:`dataframe`): A dataframe containing time series of the requested reanalysis
             variables:
             1. windspeed_ms: the surface wind speed in m/s.
-            2. temperature_K: surface air temperature in Kelvin.
-            3. surf_pres_Pa: surface pressure in Pascals.
 
     Raises:
         ValueError: If the start_year is greater than the end_year.
     """
-
-    logger.info("Please note access to MERRA2 data requires registration")
-    logger.info("Please see: https://disc.gsfc.nasa.gov/data-access#python-requests")
 
     # base url containing the monthly data set M2IMNXLFO
     base_url = r"https://goldsmr4.gesdisc.eosdis.nasa.gov/opendap/MERRA2_MONTHLY/M2IMNXLFO.5.12.4/"
@@ -444,50 +435,80 @@ def get_merra2_monthly(
         files = list(dict.fromkeys(files))
         files = [x[1:] for x in files]
 
-        # coordinate indexes
-        lat_i = ""
-        lon_i = ""
-
         # download each of the files and save them
         for f in files:
             outfile = save_pathname / f"{save_filename}_{f.split('.')[-2]}.nc"
 
             if not outfile.is_file():
-                # download one file for determining coordinate indicies
-                if lat_i == "":
-                    url = f"{base_url}{year}/{f}" + r".nc4?PS,SPEEDLML,TLML,time,lat,lon"
-                    download_file(url, outfile)
-                    ds_nc = xr.open_dataset(outfile)
-                    ds_nc_idx = ds_nc.assign_coords(
-                        lon_idx=("lon", range(ds_nc.dims["lon"])),
-                        lat_idx=("lat", range(ds_nc.dims["lat"])),
-                    )
-                    sel = ds_nc_idx.sel(lat=lat, lon=lon, method="nearest")
-                    lon_i = f"[{sel.lon_idx.values-1}:{sel.lon_idx.values+1}]"
-                    lat_i = f"[{sel.lat_idx.values-1}:{sel.lat_idx.values+1}]"
-                    ds_nc.close()
-                    outfile.unlink()
-
-                # download file with specified coordinates
-                url = (
-                    f"{base_url}{year}/{f}"
-                    r".nc4?PS[0:0]"
-                    f"{lat_i}{lon_i}"
-                    f",SPEEDLML[0:0]{lat_i}{lon_i}"
-                    f",TLML[0:0]{lat_i}{lon_i}"
-                    f",time,lat{lat_i},lon{lon_i}"
-                )
-
+                # download each file
+                url = f"{base_url}{year}/{f}" + r".nc4?SPEEDLML,time,lat,lon"
                 download_file(url, outfile)
+                    
+def get_merra2_monthly(
+    lat: float,
+    lon: float,
+    save_filename: str,
+    save_pathname: str | Path = "data/assets",
+    data_pathname: str | Path = "data",
+    data_filename: str = "merra2_monthly",
+    start_date: str = "2000-01",
+    end_date: str = None,
+) -> pd.DataFrame:
+    """
+    Get MERRA2 data directly from the NASA GES DISC service, which requires registration on the
+    GES DISC service. See: https://disc.gsfc.nasa.gov/data-access#python-requests.
+
+    This function returns monthly MERRA2 data from the "M2IMNXLFO" dataset. See further details
+    regarding the dataset at: https://disc.gsfc.nasa.gov/datasets/M2IMNXLFO_5.12.4/summary.
+    Only surface wind speed, temperature and surface pressure are downloaded here.
+
+    As well as returning the data as a dataframe, the data is also saved as monthly NetCDF files
+    and a csv file with the concatenated data. These are located in the "save_pathname" directory,
+    with "save_filename" prefix. This allows future loading without download from the CDS service.
+
+    Args:
+        lat(:obj:`float`): Latitude in WGS 84 spatial reference system (decimal degrees).
+        lon(:obj:`float`): Longitude in WGS 84 spatial reference system (decimal degrees).
+        save_pathname(:obj:`str` | :obj:`Path`): The path where the downloaded reanalysis data will
+            be saved.
+        save_filename(:obj:`str`): The file name used to save the downloaded reanalysis data.
+        start_date(:obj:`str`): The starting year and month that data is downloaded for. This
+            should be provided as a string in the format "YYYY-MM". Defaults to "2000-01".
+        end_date(:obj:`str`): The final year and month that data is downloaded for. This should be
+            provided as a string in the format "YYYY-MM". Defaults to current year and most recent
+            month.
+
+    Returns:
+        df(:obj:`dataframe`): A dataframe containing time series of the requested reanalysis
+            variables:
+            1. windspeed_ms: the surface wind speed in m/s.
+
+    Raises:
+        ValueError: If the start_year is greater than the end_year.
+    """
+
+    logger.info("Please note access to MERRA2 data requires registration")
+    logger.info("Please see: https://disc.gsfc.nasa.gov/data-access#python-requests")
+
+    download_merra2_monthly(save_pathname=data_pathname,
+        save_filename=data_filename,
+        start_date=start_date,
+        end_date=end_date)
 
     # get the saved data
-    ds_nc = xr.open_mfdataset(f"{save_pathname / f'{save_filename}*.nc'}")
+    ds_nc = xr.open_mfdataset(f"{data_pathname}/{data_filename}*.nc")
 
     # rename variables to conform with OpenOA
     ds_nc = ds_nc.rename_vars(
-        {"SPEEDLML": "windspeed_ms", "TLML": "temperature_K", "PS": "surf_pres_Pa"}
+        {"SPEEDLML": "windspeed_ms"}
     )
 
+    # wrap -180..179 to 0..359    
+    ds_nc.coords["lon"] = np.mod(ds_nc["lon"], 360)
+
+    # sort the data
+    ds_nc = ds_nc.reindex({ "lon" : np.sort(ds_nc["lon"])})
+                   
     # select the central node only for now
     sel = ds_nc.sel(lat=lat, lon=lon, method="nearest")
 
@@ -495,7 +516,7 @@ def get_merra2_monthly(
     df = sel.to_dataframe()
 
     # select required columns
-    df = df[["windspeed_ms", "temperature_K", "surf_pres_Pa"]]
+    df = df[["windspeed_ms"]]
 
     # rename the index to match other datasets
     df.index.name = "datetime"
@@ -507,6 +528,11 @@ def get_merra2_monthly(
     df = df.loc[start_date:end_date]
 
     # save to csv for easy loading as required
+    # create save_pathname if it does not exist
+    save_pathname = Path(save_pathname).resolve()
+    if not save_pathname.exists():
+        save_pathname.mkdir()
+
     df.to_csv(save_pathname / f"{save_filename}.csv", index=True)
 
     return df
