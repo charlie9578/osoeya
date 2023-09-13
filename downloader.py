@@ -423,8 +423,18 @@ def download_merra2_monthly(
         logger.error(f"start_date = {start_date.date()}, end_date = {end_date.date()}")
         raise ValueError("The start_date should be less than or equal to the end_date")
 
+    # list all dates that will be downloaded
+    dates = pd.date_range(start=start_date, end=end_date, freq="MS", inclusive="both")
+
+    # check what years need downloading
+    years = []
+    for date in dates:
+        outfile = save_pathname / f"{save_filename}_{date.year}{date.month:02}.nc"
+        if not outfile.is_file():
+            years.append(date.year)
+
     # list all years that will be downloaded
-    years = list(range(start_date.year, end_date.year + 1, 1))
+    years = list(set(years))
 
     # download the data
     for year in years:
