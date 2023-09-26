@@ -7,3 +7,5 @@ dask
 matplotlib
 scikit-learn
 openpyxl
+pyproj
+bokeh
