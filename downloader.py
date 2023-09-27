@@ -282,6 +282,30 @@ def download_era5_monthly(
                 logger.error(f"Failed to download ERA5: {outfile}")
                 logger.error(e)
 
+def get_nearest_slice(sel,ds_nc,num_points_to_include=1):
+
+    # Get the longitude and latitude values of the nearest point
+    nearest_lon = sel['longitude'].values
+    nearest_lat = sel['latitude'].values
+
+    # Find the indices of the nearest coordinates in the original dataset
+    nearest_indices  = np.where((ds_nc['longitude'] == nearest_lon) & (ds_nc['latitude'] == nearest_lat))
+
+    # nearest_indices is a tuple, so you can extract the indices
+    lon_index, lat_index = nearest_indices[0][0], nearest_indices[1][0]
+
+    # Calculate the start and end indices for the slice
+    lon_start = max(0, lon_index - num_points_to_include)
+    lon_end = min(ds_nc.sizes['longitude'], lon_index + num_points_to_include + 1)  # Add 1 to include the endpoint
+
+    lat_start = max(0, lat_index - num_points_to_include)
+    lat_end = min(ds_nc.sizes['latitude'], lat_index + num_points_to_include + 1)  # Add 1 to include the endpoint
+
+    # Extract the slice from the original dataset
+    nearest_slice = ds_nc.isel(longitude=slice(lon_start, lon_end), latitude=slice(lat_start, lat_end))
+
+    return nearest_slice
+
 def get_era5_monthly(
     lat: float,
     lon: float,
@@ -336,11 +360,14 @@ def get_era5_monthly(
     else:
         sel = ds_nc.sel(latitude=lat, longitude=lon, method="nearest")
 
-    # convert to a pandas dataframe
-    df = sel.to_dataframe()
+    # now take the surrounding nearest nodes as well
+    nearest_slice = get_nearest_slice(sel,ds_nc,num_points_to_include=1)
 
-    # select required columns
-    df = df[["windspeed_ms"]]
+    # convert to a pandas dataframe
+    df = nearest_slice.to_dataframe().unstack(["latitude","longitude"])["windspeed_ms"]
+
+    # rename columns based on their coordinates
+    df.columns = [str(item) for item in df.columns.values]
 
     # rename the index to match other datasets
     df.index.name = "datetime"
@@ -513,21 +540,30 @@ def get_merra2_monthly(
         {"SPEEDLML": "windspeed_ms"}
     )
 
+    # rename coords to match across code
+    ds_nc = ds_nc.rename(
+        {"lon":"longitude",
+         "lat":"latitude"}
+    )
+
     # wrap -180..179 to 0..359    
-    ds_nc.coords["lon"] = np.mod(ds_nc["lon"], 360)
+    ds_nc.coords["longitude"] = np.mod(ds_nc["longitude"], 360)
 
     # sort the data
-    ds_nc = ds_nc.reindex({ "lon" : np.sort(ds_nc["lon"])})
+    ds_nc = ds_nc.reindex({ "longitude" : np.sort(ds_nc["longitude"])})
                    
     # select the central node only for now
-    sel = ds_nc.sel(lat=lat, lon=lon, method="nearest")
+    sel = ds_nc.sel(latitude=lat, longitude=lon, method="nearest")
+
+    # now take the surrounding nearest nodes as well
+    nearest_slice = get_nearest_slice(sel,ds_nc,num_points_to_include=1)
 
     # convert to a pandas dataframe
-    df = sel.to_dataframe()
+    df = nearest_slice.to_dataframe().unstack(["latitude","longitude"])["windspeed_ms"]
 
-    # select required columns
-    df = df[["windspeed_ms"]]
-
+    # rename columns based on their coordinates
+    df.columns = [str(item) for item in df.columns.values]
+    
     # rename the index to match other datasets
     df.index.name = "datetime"
 
@@ -546,6 +582,27 @@ def get_merra2_monthly(
     df.to_csv(save_pathname / f"{save_filename}.csv", index=True)
 
     return df
+
+
+def get_best_correlated_resource(df_resource,df_generation):
+        
+    # combine the dataframe with the gross production to determine the best node for use
+    correlation_data  = pd.concat([df_generation,df_resource],axis=1)
+
+    # determine R2, note correlation coefficient is R, not R-squared, so hence need to apply power of 2
+    all_correlations = correlation_data.corr()[df_generation.name]**2
+
+    # find the best correlation of wind speed to production
+    best_correlation_coef = all_correlations.nlargest(2).iloc[1]
+
+    # get the wind speed data for the best correlation
+    best_correlation_column = list(all_correlations.index[all_correlations==best_correlation_coef])[0]
+
+    df_resource = df_resource[best_correlation_column]
+
+    df_resource = df_resource.to_frame()
+
+    return df_resource
 
 
 def request_EIA(base_url,params):
